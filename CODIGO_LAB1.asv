@@ -1,4 +1,30 @@
-%%%%LABORATORY SESSION 1%%%%
+%%%%LABORATORY SESSION 1%%%% 
+
+%% QUESTION 1
+
+clc;clear;close all;
+
+%CASE D
+%COE
+a_d = 7202.5e3; %semimayor axis
+e_d = 0.0009826; %eccenntricity
+i_d = 96.5717; %inclination
+raan_d = 344.5256; %right ascension of the ascending node
+aop_d = 296.2811; %argument of periapsis
+ta_d = 0; %true anomaly
+
+%Select start date, end date and sample time 
+start_time = datetime(2013,11,10,23,03,03.95);
+stop_time = start_time+days(360); %propagate for 10 day
+sample_time=60; %Sample every 60 seconds
+%Create Satellite scenario
+sc = satelliteScenario(start_time,stop_time,sample_time);
+satD = satellite(sc,a_d,e_d,i_d,raan_d,aop_d,ta_d,"Name","SAT_D", ...
+    "OrbitPropagator","two-body-keplerian");
+
+%satelliteScenarioViewer(sc,"Dimension","3D");
+%satelliteScenarioViewer(sc,"Dimension","2D");
+
 %% SAT A
 
 clc;clear;close all;
@@ -13,7 +39,7 @@ ta_a = 0; %true anomaly
 
 %Select start date, end date and sample time 
 start_time = datetime(2013,11,10,23,03,03.95);
-stop_time = start_time+days(5); %propagate for 10 day
+stop_time = start_time+days(360); %propagate for 10 day
 sample_time=60; %Sample every 60 seconds
 %Create Satellite scenario
 sc = satelliteScenario(start_time,stop_time,sample_time);
@@ -26,13 +52,13 @@ g = gimbal(satA); %CHANGE HERE WHICH SAT YOU WANT TO STUDY
 pointAt(g,'nadir');
 camera= conicalSensor(g,MaxViewAngle=20); %Add a camera with gimbal g and a fov of 20 deg
 fieldOfView(camera);
-groundTrack(satA,LeadTime=86400*5)
+groundTrack(sat2,LeadTime=86400*5)
 
 %Add ground station
 lat = 40;
 lon = 3.7033;
 min_elev = 20; %minimum elevation angle 
-gs = groundStation(sc,"Latitude",lat,"Longitude",lon,"MaskElevationAngle",min_elev,"Name","GS");
+gs = groundStation(sc,"Latitude",lat,"Longitude",lon,"MaskElevationAngle",min_elev);
 
 satelliteScenarioViewer(sc,"Dimension","3D");
 satelliteScenarioViewer(sc,"Dimension","2D");
@@ -132,19 +158,6 @@ sample_time=60; %Sample every 60 seconds
 sc = satelliteScenario(start_time,stop_time,sample_time);
 satD = satellite(sc,a_d,e_d,i_d,raan_d,aop_d,ta_d,"Name","SAT_D", ...
     "OrbitPropagator","two-body-keplerian");
-
-%Add a sensor 
-g = gimbal(satC); %CHANGE HERE WHICH SAT YOU WANT TO STUDY
-pointAt(g,'nadir');
-camera= conicalSensor(g,MaxViewAngle=20); %Add a camera with gimbal g and a fov of 20 deg
-fieldOfView(camera);
-groundTrack(satC,LeadTime=86400*5)
-
-%Add ground station
-lat = 40;
-lon = 3.7033;
-min_elev = 20; %minimum elevation angle 
-gs = groundStation(sc,"Latitude",lat,"Longitude",lon,"MaskElevationAngle",min_elev);
 
 satelliteScenarioViewer(sc,"Dimension","3D");
 satelliteScenarioViewer(sc,"Dimension","2D");
