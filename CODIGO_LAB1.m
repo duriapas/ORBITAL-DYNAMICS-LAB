@@ -13,7 +13,7 @@ ta_a = 0; %true anomaly
 
 %Select start date, end date and sample time 
 start_time = datetime(2013,11,10,23,03,03.95);
-stop_time = start_time+days(5); %propagate for 10 day
+stop_time = start_time+days(30); %propagate for 10 day
 sample_time=60; %Sample every 60 seconds
 %Create Satellite scenario
 sc = satelliteScenario(start_time,stop_time,sample_time);
@@ -26,7 +26,7 @@ g = gimbal(satA); %CHANGE HERE WHICH SAT YOU WANT TO STUDY
 pointAt(g,'nadir');
 camera= conicalSensor(g,MaxViewAngle=20); %Add a camera with gimbal g and a fov of 20 deg
 fieldOfView(camera);
-groundTrack(satA,LeadTime=86400*5)
+groundTrack(satA,LeadTime=86400*30)
 
 %Add ground station
 lat = 40;
@@ -36,6 +36,9 @@ gs = groundStation(sc,"Latitude",lat,"Longitude",lon,"MaskElevationAngle",min_el
 
 satelliteScenarioViewer(sc,"Dimension","3D");
 satelliteScenarioViewer(sc,"Dimension","2D");
+
+ac = access(satA,gs);
+intvls = accessIntervals(ac)
 
 
 %% SAT B
@@ -76,6 +79,9 @@ gs = groundStation(sc,"Latitude",lat,"Longitude",lon,"MaskElevationAngle",min_el
 satelliteScenarioViewer(sc,"Dimension","3D");
 satelliteScenarioViewer(sc,"Dimension","2D");
 
+ac = access(satB,gs);
+intvls = accessIntervals(ac)
+
 %% SAT C
 
 clc;clear;close all;
@@ -90,7 +96,7 @@ ta_c = 0; %true anomaly
 
 %Select start date, end date and sample time 
 start_time = datetime(2013,11,10,23,03,03.95);
-stop_time = start_time+days(360); %propagate for 10 day
+stop_time = start_time+days(10); %propagate for 10 day
 sample_time=60; %Sample every 60 seconds
 %Create Satellite scenario
 sc = satelliteScenario(start_time,stop_time,sample_time);
@@ -103,7 +109,7 @@ g = gimbal(satC); %CHANGE HERE WHICH SAT YOU WANT TO STUDY
 pointAt(g,'nadir');
 camera= conicalSensor(g,MaxViewAngle=20); %Add a camera with gimbal g and a fov of 20 deg
 fieldOfView(camera);
-groundTrack(satC,LeadTime=86400*5)
+groundTrack(satC,LeadTime=86400*10)
 
 %Add ground station
 lat = 40;
@@ -113,6 +119,9 @@ gs = groundStation(sc,"Latitude",lat,"Longitude",lon,"MaskElevationAngle",min_el
 
 satelliteScenarioViewer(sc,"Dimension","3D");
 satelliteScenarioViewer(sc,"Dimension","2D");
+
+ac = access(satC,gs);
+intvls = accessIntervals(ac)
 
 %% SAT D
 
@@ -148,3 +157,6 @@ gs = groundStation(sc,"Latitude",lat,"Longitude",lon,"MaskElevationAngle",min_el
 
 satelliteScenarioViewer(sc,"Dimension","3D");
 satelliteScenarioViewer(sc,"Dimension","2D");
+
+ac = access(satD,gs);
+intvls = accessIntervals(ac)
