@@ -13,8 +13,8 @@ ta_a = 0; %true anomaly
 
 %Select start date, end date and sample time 
 start_time = datetime(2013,11,10,23,03,03.95);
-stop_time = start_time+days(30); %propagate for 10 day
-sample_time=60; %Sample every 60 seconds
+stop_time = start_time+days(365); %propagate for 10 day
+sample_time=600; %Sample every 60 seconds
 %Create Satellite scenario
 sc = satelliteScenario(start_time,stop_time,sample_time);
 
@@ -30,15 +30,29 @@ groundTrack(satA,LeadTime=86400*30)
 
 %Add ground station
 lat = 40;
-lon = 3.7033;
+lon = -3.7033;
 min_elev = 20; %minimum elevation angle 
 gs = groundStation(sc,"Latitude",lat,"Longitude",lon,"MaskElevationAngle",min_elev,"Name","GS");
 
-satelliteScenarioViewer(sc,"Dimension","3D");
-satelliteScenarioViewer(sc,"Dimension","2D");
+% satelliteScenarioViewer(sc,"Dimension","3D");
+% satelliteScenarioViewer(sc,"Dimension","2D");
 
 ac = access(satA,gs);
 intvls = accessIntervals(ac)
+
+window = zeros(length(intvls.StartTime));
+
+for i = 1:length(window)
+    window(i) = minutes(intvls.EndTime(i) - intvls.StartTime(i));
+end
+
+avgWindow = mean(window);
+
+fprintf("Average window duration= %.2f min\n",avgWindow(1));
+
+fprintf("Number of contacts in a year= %.2f\n", length(intvls.IntervalNumber))
+
+fprintf("Frequency of contact= %.2f/day\n",length(intvls.IntervalNumber)/365);
 
 
 %% SAT B
@@ -55,32 +69,47 @@ ta_b = 0; %true anomaly
 
 %Select start date, end date and sample time 
 start_time = datetime(2013,11,10,23,03,03.95);
-stop_time = start_time+days(360); %propagate for 10 day
-sample_time=60; %Sample every 60 seconds
+stop_time = start_time+days(220); %propagate for 10 day
+sample_time=300; %Sample every 60 seconds
 %Create Satellite scenario
 sc = satelliteScenario(start_time,stop_time,sample_time);
 
 satB = satellite(sc,a_b,e_b,i_b,raan_b,aop_b,ta_b,"Name","SAT_B", ...
-    "OrbitPropagator","two-body-keplerian");
+    "OrbitPropagator","SGP4");
 
 %Add a sensor 
 g = gimbal(satB); %CHANGE HERE WHICH SAT YOU WANT TO STUDY
 pointAt(g,'nadir');
 camera= conicalSensor(g,MaxViewAngle=20); %Add a camera with gimbal g and a fov of 20 deg
 fieldOfView(camera);
-groundTrack(satB,LeadTime=86400*5)
+% groundTrack(satB,LeadTime=86400*5)
 
 %Add ground station
 lat = 40;
-lon = 3.7033;
+lon = -3.7033;
 min_elev = 20; %minimum elevation angle 
 gs = groundStation(sc,"Latitude",lat,"Longitude",lon,"MaskElevationAngle",min_elev);
 
-satelliteScenarioViewer(sc,"Dimension","3D");
-satelliteScenarioViewer(sc,"Dimension","2D");
+% satelliteScenarioViewer(sc,"Dimension","3D");
+% satelliteScenarioViewer(sc,"Dimension","2D");
 
 ac = access(satB,gs);
-intvls = accessIntervals(ac)
+intvls = accessIntervals(ac);
+
+window = zeros(length(intvls.StartTime));
+
+for i = 1:length(window)
+    window(i) = minutes(intvls.EndTime(i) - intvls.StartTime(i));
+end
+
+avgWindow = mean(window);
+
+fprintf("Average window duration= %.2f min\n",avgWindow(1));
+
+fprintf("Number of contacts in a year= %.2f\n", length(intvls.IntervalNumber))
+
+fprintf("Frequency of contact= %.2f/day\n",length(intvls.IntervalNumber)/365);
+
 
 %% SAT C
 
@@ -96,8 +125,8 @@ ta_c = 0; %true anomaly
 
 %Select start date, end date and sample time 
 start_time = datetime(2013,11,10,23,03,03.95);
-stop_time = start_time+days(10); %propagate for 10 day
-sample_time=60; %Sample every 60 seconds
+stop_time = start_time+days(365); %propagate for 10 day
+sample_time=600; %Sample every 60 seconds
 %Create Satellite scenario
 sc = satelliteScenario(start_time,stop_time,sample_time);
 
@@ -113,15 +142,30 @@ groundTrack(satC,LeadTime=86400*10)
 
 %Add ground station
 lat = 40;
-lon = 3.7033;
+lon = -3.7033;
 min_elev = 20; %minimum elevation angle 
 gs = groundStation(sc,"Latitude",lat,"Longitude",lon,"MaskElevationAngle",min_elev);
 
-satelliteScenarioViewer(sc,"Dimension","3D");
-satelliteScenarioViewer(sc,"Dimension","2D");
+% satelliteScenarioViewer(sc,"Dimension","3D");
+% satelliteScenarioViewer(sc,"Dimension","2D");
 
 ac = access(satC,gs);
 intvls = accessIntervals(ac)
+
+window = zeros(length(intvls.StartTime));
+
+for i = 1:length(window)
+    window(i) = minutes(intvls.EndTime(i) - intvls.StartTime(i));
+end
+
+avgWindow = mean(window);
+
+fprintf("Average window duration= %.2f min\n",avgWindow(1));
+
+fprintf("Number of contacts in a year= %.2f\n", length(intvls.IntervalNumber))
+
+fprintf("Frequency of contact= %.2f/day\n",length(intvls.IntervalNumber)/365);
+
 
 %% SAT D
 
@@ -151,12 +195,26 @@ groundTrack(satC,LeadTime=86400*5)
 
 %Add ground station
 lat = 40;
-lon = 3.7033;
+lon = -3.7033;
 min_elev = 20; %minimum elevation angle 
 gs = groundStation(sc,"Latitude",lat,"Longitude",lon,"MaskElevationAngle",min_elev);
 
-satelliteScenarioViewer(sc,"Dimension","3D");
-satelliteScenarioViewer(sc,"Dimension","2D");
+% satelliteScenarioViewer(sc,"Dimension","3D");
+% satelliteScenarioViewer(sc,"Dimension","2D");
 
 ac = access(satD,gs);
 intvls = accessIntervals(ac)
+
+window = zeros(length(intvls.StartTime));
+
+for i = 1:length(window)
+    window(i) = minutes(intvls.EndTime(i) - intvls.StartTime(i));
+end
+
+avgWindow = mean(window)
+
+fprintf("Average window duration= %.2f min\n",avgWindow(1));
+
+fprintf("Number of contacts in a year= %.2f\n", length(intvls.IntervalNumber))
+
+fprintf("Frequency of contact= %.2f/day\n",length(intvls.IntervalNumber)/365);
