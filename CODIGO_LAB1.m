@@ -96,10 +96,25 @@ satB = satellite(sc,a_b,e_b,i_b,raan_b,aop_b,ta_b,"Name","SAT_B", ...
 % groundTrack(satD,LeadTime=86400*1);
 
 % Check if sunsynchronous orbits
-isSunSynchronous(a_a, e_a, i_a, "Orbit A", 0.01);
-isSunSynchronous(a_b, e_b, i_b, "Orbit B", 0.01);
-isSunSynchronous(a_c, e_c, i_c, "Orbit C", 0.01);
-isSunSynchronous(a_d, e_d, i_d, "Orbit D", 0.01);
+% isSunSynchronous(elems(2,:), names(2), 0.01, start_time, Re, mu, J2);
+% isSunSynchronous(a_b, e_b, i_b, "Orbit B", 0.01);
+% isSunSynchronous(a_c, e_c, i_c, "Orbit C", 0.01);
+% isSunSynchronous(a_d, e_d, i_d, "Orbit D", 0.01);
+
+for i=1:4
+    kep = elems(i,:);
+
+    % Orbital characteristics
+    [ha, hp, T] = getOrbitCharacteristics(kep, Re, mu);
+    fprintf("\n===== Orbit %s =====\n", names(i));
+    fprintf('Apogee Altitude : %.1f km\n', ha);
+    fprintf('Perige Altitude : %.1f km\n', hp);
+    fprintf('Apogee Altitude : %.1f hours\n', T/3600);
+
+    % Sun-synchronous?
+    epoch = datetime(2013,11,10,23,03,03.95);
+    isSunSynchronous(kep, names(i), 0.01, epoch, Re, mu, J2);
+end
 
 
 
@@ -507,8 +522,9 @@ title('Orbit D: semi-major axis decay with drag')
 
 %% Task 3(a); Chosen Orbit => B
 % Report values obtained with 30 second sample time over a year. Task takes 
-% approx 20 mins to run at that sample time. It is recommended to use a 
-% higher sample time or lower stop time to check if the program works
+% approx 40 mins to run at that sample time. It is recommended to use a 
+% higher sample time or lower stop time just to check if the program works
+% if task3a_orbitB.mat table with the propagated values won't be used
 clc; close all;
 
 % Settings
@@ -522,14 +538,15 @@ kep   = elems(idx,:);
 t0    = start_time;
 chunk = 0;
 
+if isfile('task3a_orbitB.mat')
+    load('task3a_orbitB.mat');
+else
 % Chunk Propagation 
-eclStart = zeros(0,1);
-eclEnd   = zeros(0,1);
-
 T_all    = [];          % Time of every sample in seconds
 lit_all  = false(1,0);  % Eclipse logical of ev. sample, True = eclipse
 dAU_all  = [];          % earth-Sun distance ev. sample [AU]
 sinB_all = [];          % beta value of every sample
+g_all = [];             % Shadow function
 while t0 < stop_time
     chunk = chunk + 1;
     t1 = min(t0 + chunk_length, stop_time);
@@ -564,14 +581,9 @@ while t0 < stop_time
     % < Earth radius -> Eclipse; 1XN logical variable. true = eclipse
     inEcl  = (p < 0) & (d_perp < Re/1000);   
 
-    % Eclipse intervals in this chunk stored as seconds since epoch
-    edges  = diff([false, inEcl, false]);       % +1 = entry, -1 = exit
-    iStart = find(edges ==  1);
-    iEnd   = find(edges == -1) - 1;
-    newStart = seconds(t(iStart) - start_time).';
-    newEnd   = seconds(t(iEnd)   - start_time).';
-    [eclStart, eclEnd] = appendIntervals(eclStart, eclEnd, newStart, newEnd, ...
-        seconds(t0 - start_time), sample_time/2);
+    % Refine entry/exit times by linear interpolation of g
+    % shadow function: >0 outside cylinder, <0 inside
+    g = d_perp - Re/1000; 
 
     % orbit normal and beta angle at every sample
     h_hat = cross(r_sat, v_sat, 1);          % column r x v
@@ -589,16 +601,40 @@ while t0 < stop_time
     lit_all  = [lit_all,  ~inEcl(keep)];    
     dAU_all  = [dAU_all,  d_AU(keep)];      
     sinB_all = [sinB_all, sinB(keep)];      
+    g_all    = [g_all,    g(keep)];
 
     % Prepare next chunk propagation 
     [r_end, v_end] = states(sat, t1, "CoordinateFrame", "inertial");
     [a, ecc, incl, RAAN, argp, nu] = ijk2keplerian(r_end, v_end);
     kep = [a ecc incl RAAN argp nu];
+
+    fprintf("Done until %s\n", string(t1, 'dd-MMM-yyyy HH:mm'));
     t0  = t1;
     clear sc sat
 end
+save('task3a_orbitB.mat', 'T_all', 'lit_all', 'dAU_all', 'sinB_all', 'g_all', 'sample_time');
+end
 
-eclDur = (eclEnd - eclStart + sample_time) / 60;   % [min]
+% Eclipse interval interpolation over the full mission time (year)
+dt  = sample_time;
+N   = numel(T_all);
+edges  = diff([false, ~lit_all, false]);        % +1 entry, -1 exit
+iStart = find(edges ==  1);
+iEnd   = find(edges == -1) - 1;
+
+eclStart = T_all(iStart);                        % defaults: sample times
+eclEnd   = T_all(iEnd);
+
+m = iStart > 1;  k = iStart(m);                  % refine entries
+eclStart(m) = T_all(k-1) + dt * g_all(k-1) ./ (g_all(k-1) - g_all(k));
+m = iEnd < N;    k = iEnd(m);                    % refine exits
+eclEnd(m)   = T_all(k)   + dt * g_all(k)   ./ (g_all(k)   - g_all(k+1));
+
+full = (iStart > 1) & (iEnd < N);                % drop eclipses cut by start/end of run
+eclStart = eclStart(full);
+eclEnd   = eclEnd(full);
+eclDur   = (eclEnd - eclStart) / 60;             % [min], no +dt correction needed
+
 fprintf("Eclipses: %d | mean %.1f | min %.1f | max %.1f min\n", ...
     numel(eclDur), mean(eclDur), min(eclDur), max(eclDur));
 figure; plot(eclStart/86400, eclDur, '.');
@@ -618,22 +654,26 @@ P_D = P0 * flux .* max(0, cosd(beta));        % 1 axis track about h, no cant
 
 % Energy per orbit
 P_all = [P_A; P_B; P_C; P_D];               % 4xN [W]
-layout = ["A: 2-axis tracking", "B: body-fixed +h", ...
+strategy = ["A: 2-axis tracking", "B: body-fixed +h", ...
     "C: 1-axis canted",   "D: 1-axis no cant"];
 
-% Total of energy for each layout
-E_cum = cumtrapz(T_all, P_all, 2);          % 4xN [J] integrated along time
+% Power each strategy delivers while lit (no eclipse)[W]
+P_lit = (P0 ./ dAU_all.^2) .* [ones(size(sinB_all));
+                                max(0, sinB_all);
+                                max(0, cosd(beta - gamma));
+                                max(0, cosd(beta))];
 
-% Orbit boundaries defined as eclipse entries (one eclipse per orbit)
-tOrb  = eclStart.';                         % [s] since epoch
-E_at  = interp1(T_all, E_cum.', tOrb).';    % total at each boundary [J]
-E_orb = diff(E_at, 1, 2) / 3.6e6;           % energy per orbit [kWh]
-T_orb = diff(tOrb) / 60;                    % orbit duration [min]
+tOrb  = eclStart;                           % orbit k starts at eclipse entry k
+T_orb = diff(tOrb) / 60;                    % orbit durations [min]
+T_lit = tOrb(2:end) - eclEnd(1:end-1);      % sunlit time of each orbit [s]
+t_mid = (eclEnd(1:end-1) + tOrb(2:end)) / 2;% middle of each sunlit arc [s]
+P_mid = interp1(T_all, P_lit.', t_mid).';   % lit power [W]
+E_orb = P_mid .* T_lit / 3.6e6;             % energy per orbit [kWh]
 
 % Results
 fprintf("\nOrbits analysed: %d | mean duration %.2f min\n", numel(T_orb), mean(T_orb));
 for k = 1:4
-    fprintf("%-20s mean %.3f | min %.3f | max %.3f kWh/orbit\n", layout(k), ...
+    fprintf("%-20s mean %.3f | min %.3f | max %.3f kWh/orbit\n", strategy(k), ...
         mean(E_orb(k,:)), min(E_orb(k,:)), max(E_orb(k,:)));
 end
 
@@ -644,38 +684,203 @@ fprintf("Cross-check (total/N): %s kWh/orbit\n", mat2str(E_tot.'/N_orb, 4));
 
 figure; plot(tOrb(1:end-1)/86400, E_orb, '.');
 xlabel('Days since epoch'); ylabel('Energy per orbit [kWh]');
-legend(layout, 'Location', 'best'); grid on;
+legend(strategy, 'Location', 'best'); grid on;
 
 figure; plot(T_all/86400, beta);
 xlabel('Days since epoch'); ylabel('\beta [deg]'); grid on;
+
+%% Task 3(b)
+clc; close all;
+
+% Settings 
+SelectOrbit = 2;                   
+kep0 = elems(SelectOrbit,:);
+a0   = kep0(1);                      
+
+sim_days = 100;
+stop_time  = start_time + days(sim_days);
+sample_time  = 60;            
+max_samples  = 20000;    
+chunk_length = seconds(max_samples*sample_time);
+
+n0    = sqrt(mu/a0^3);               % mean motion [rad/s]
+T_orb = 2*pi/n0;                     % orbital period [s]
+B     = Cd*area_drag/mass_sat;       % ballistic coefficient [m^2/kg]
+
+% Chunk propagation with drag 
+T_all = [];   % time since start_time [s]
+a_all = [];   % osculating semi-major axis [m]
+e_all = [];   % eccentricity 
+
+kep = kep0;
+t0  = start_time;
+while t0 < stop_time
+    t1 = min(t0 + chunk_length, stop_time);
+
+    % Scenario for this chunk
+    sc = satelliteScenario(t0, t1, sample_time);
+    numericalPropagator(sc, ...
+        'IncludeAtmosDrag', true, ...
+        'GravitationalPotentialModel', "point-mass", ...
+        'ODESolver', "ode45", ...
+        'ODESet', odeset('RelTol',1e-8,'AbsTol',1e-8));
+
+    sat = satellite(sc, kep(1), kep(2), kep(3), kep(4), kep(5), kep(6), ...
+        "Name", "SAT_SEL", "OrbitPropagator", "numerical");
+    physProps = physicalProperties(sat, 'Mass', mass_sat, ...
+        'DragArea', area_drag, ...
+        'DragCoefficient', Cd);
+
+    % States of this chunk
+    [r, v, t] = states(sat, "CoordinateFrame", "inertial");
+    [a, ecc]  = ijk2keplerian(r, v);
+    tsec = seconds(t - start_time);
+    tsec = tsec(:);
+    a = a(:);
+    ecc = ecc(:);
+
+    % The first sample of each new chunk repeats the last sample of the previous one
+    if ~isempty(T_all)
+        tsec = tsec(2:end);
+        a = a(2:end);
+        ecc = ecc(2:end);
+    end
+    T_all = [T_all; tsec];
+    a_all = [a_all; a];
+    e_all = [e_all; ecc];
+
+    % Prepare next chunk propagation
+    [r_end, v_end] = states(sat, t1, "CoordinateFrame", "inertial");
+    [a, ecc, incl, RAAN, argp, nu] = ijk2keplerian(r_end, v_end);
+    kep = [a ecc incl RAAN argp nu];
+
+    fprintf("Done until %s\n", string(t1, 'dd-MMM-yyyy HH:mm'));
+    t0 = t1;
+    clear sc sat physProps r v t
+end
+
+% Remove short-period oscillations (orbit average)
+window    = round(T_orb/sample_time);   % samples per orbit
+a_mean = movmean(a_all, window);
+idx = (window:numel(T_all)-window).';
+
+% Secular decay rate and total loss in a 
+p = polyfit(T_all(idx), a_mean(idx), 1);
+adot = p(1);                       % [m/s]
+T_win = sim_days*86400;            % [s]
+Delta_a = adot*T_win;              % secular loss of a over 100 days [m]
+
+fprintf('\n--- Propagation results (%d days) ---\n', sim_days);
+fprintf('Decay rate of a : %.3f m/day\n', adot*86400);
+fprintf('Total loss of a : %.2f m\n', Delta_a);
+fprintf('Change in e : %.2e\n', e_all(end) - e_all(1));
+
+% Station-keeping DeltaV
+% Two tangential burns: dV = (n/2)*|Delta a|
+dV_100   = 0.5*n0*abs(Delta_a);
+% Equivalent continuous thrust to compensate drag
+dVdt     = 0.5*n0*abs(adot);          % [m/s^2]
+dV_orbit = dVdt*T_orb;
+dV_day   = dVdt*86400;
+
+fprintf('\n--- Station-keeping DeltaV ---\n');
+fprintf('DeltaV per orbit    : %.3e m/s\n', dV_orbit);
+fprintf('DeltaV per day      : %.3e m/s\n', dV_day);
+fprintf('DeltaV in 100 days  : %.4f m/s\n', dV_100);
+
+% Analytical cross-check 
+% Density MATLAB's model is applying 
+rho_eff = abs(adot)/(B*sqrt(mu*a0));
+fprintf('\n--- Analytical check ---\n');
+fprintf('Altitude            : %.1f km\n', (a0 - Re)/1e3);
+fprintf('Effective density   : %.3e kg/m^3\n', rho_eff);
+
+rho_tab = 6.65E-14; % Assignment guide density table value at 660 km (mean)
+v0      = sqrt(mu/a0);
+acc_drag  = 0.5*rho_tab*v0^2*B;               
+dV_100_an = acc_drag*T_win;
+da_rev    = -2*pi*rho_tab*a0^2*B;          % loss of a per revolution [m]
+fprintf('Table density       : %.3e kg/m^3\n', rho_tab);
+fprintf('Decay per orbit     : %.3f m\n', da_rev);
+fprintf('DeltaV 100 days     : %.4f m/s\n', dV_100_an);
+
+%  Operational window strategy
+win_lim  = 100;            % station keeping window limit [m]
+n_burns = ceil(abs(Delta_a)/win_lim);
+dV_burn = 0.5*n0*win_lim;
+t_burn  = win_lim/abs(adot)/86400;              % days between maneuvers
+fprintf('\n--- Operational window (limit %.0f m) ---\n', win_lim);
+fprintf('Maneuver every      : %.1f days\n', t_burn);
+fprintf('Number of maneuvers : %d\n', n_burns);
+fprintf('DeltaV per maneuver : %.4f m/s\n', dV_burn);
+
+% Plots 
+figure('Name', "Selected orbit - a decay");
+plot(T_all/86400, (a_all - a0), 'Color', [0.7 0.7 1]); hold on
+plot(T_all(idx)/86400, (a_mean(idx) - a0), 'b', 'LineWidth', 1.2)
+plot(T_all(idx)/86400, (polyval(p, T_all(idx)) - a0), 'r--', 'LineWidth', 1.5)
+xlabel('Time since epoch [days]'); ylabel('a - a_0 [m]'); grid on
+legend('Osculating a', 'Orbit-averaged a', 'Linear fit', 'Location', 'southwest')
+title('Selected orbit: semi-major axis decay due to drag (100 days)')
+
+figure('Name', "Selected orbit - eccentricity");
+plot(T_all/86400, e_all, 'b'); grid on
+xlabel('Time since epoch [days]'); ylabel('e [-]')
+title('Selected orbit: eccentricity with drag (100 days)')
 
 
 %% Auxiliary functions
 
 
 % Check whether an orbit is sun-synchronous given the initial orbital elements.
-function [isSSO, raanDot, sunDot] = isSunSynchronous(a, e, i, name, tol)
-
-mu = 3.986004418e14;        
-Re = 6371137;         
-J2 = 1.08262668e-3;
-
-n = sqrt(mu / a^3);            
-p = a * (1 - e^2);             
-K = 1.5 * n * J2 * (Re/p)^2;   
-
-raanDot = -K * cosd(i) * (180/pi) * 86400;   % secular RAAN rate [deg/day]
+% If it is, also compute the Local Time of the Ascending Node (LTAN) at epoch.
+function [isSSO, raanDot, sunDot, ltan, ltanApp] = isSunSynchronous(kep,...
+                                            name, tol, epoch, Re, mu, J2)
+n = sqrt(mu / kep(1)^3);
+p = kep(1) * (1 - kep(2)^2);
+K = 1.5 * n * J2 * (Re/p)^2;
+raanDot = -K * cosd(kep(3)) * (180/pi) * 86400;   % secular RAAN rate [deg/day]
 sunDot  = 360 / 365.2422;                     % Sun's mean motion [deg/day]
-
 isSSO = abs(raanDot/sunDot - 1) <= tol;
-
 ltanDrift = 4 * (raanDot - sunDot);   % LTAN drift [min/day] (1 deg = 4 min)
-
 yesno = {'no', 'yes'};
-fprintf('%s | dRAAN/dt = %+.5f deg/day vs Sun %.5f deg/day (%+.2f %%)\n', ...
+fprintf('%s; dRAAN/dt = %+.5f deg/day vs Sun %.5f deg/day (%+.2f %%)\n', ...
     name, raanDot, sunDot, 100*(raanDot/sunDot - 1));
-fprintf('%s | LTAN drift = %+.4f min/day (%+.1f min/year) -> sun-synchronous: %s (tol %.2g %%)\n', ...
+fprintf('%s; LTAN drift = %+.4f min/day (%+.1f min/year) -> sun-synchronous: %s (tol %.2g %%)\n', ...
     name, ltanDrift, 365.25*ltanDrift, yesno{isSSO + 1}, 100*tol);
+
+ltan = NaN;
+ltanApp = NaN;
+if isSSO && nargin >= 7
+    % Days since J2000.0 (2000-01-01 12:00 TT; the ~1 min UTC-TT offset is negligible here)
+    if isdatetime(epoch)
+        d = days(epoch - datetime(2000, 1, 1, 12, 0, 0));
+    else
+        d = epoch - 2451545.0;      % epoch given as a Julian Date
+    end
+
+    % Low-precision Sun position (Astronomical Almanac, ~0.01 deg accuracy)
+    L   = mod(280.460 + 0.9856474*d, 360);      % Sun mean longitude [deg]
+    g   = mod(357.528 + 0.9856003*d, 360);      % Sun mean anomaly [deg]
+    lam = L + 1.915*sind(g) + 0.020*sind(2*g);  % Sun ecliptic longitude [deg]
+    eps = 23.439 - 4e-7*d;                      % obliquity of the ecliptic [deg]
+    alphaSun = mod(atan2d(cosd(eps)*sind(lam), cosd(lam)), 360);  % true Sun RA [deg]
+
+    % LTAN: the Sun is at local noon (12 h) where the node's RA equals the Sun's RA,
+    % and every 15 deg of RA east of the Sun adds 1 h of local time.
+    ltan    = mod(12 + (kep(4) - L)/15, 24);          % mean Sun  (RA of mean Sun = L)
+    ltanApp = mod(12 + (kep(4) - alphaSun)/15, 24);   % true Sun
+
+    fprintf('%s | Sun RA at epoch = %.3f deg (mean Sun %.3f deg)\n', name, alphaSun, L);
+    fprintf('%s | LTAN at epoch = %s mean solar time (%s apparent solar time)\n', ...
+        name, hhmm(ltan), hhmm(ltanApp));
+end
+end
+
+% Format decimal hours as hh:mm
+function s = hhmm(h)
+m = mod(round(h*60), 1440);
+s = sprintf('%02d:%02d', floor(m/60), mod(m, 60));
 end
 
 % Enter NaN between jumps of more than 180 deg
@@ -703,3 +908,9 @@ function [allS, allE] = appendIntervals(allS, allE, newS, newE, chunkStart, tol)
     allE = [allE; newE];
 end
 
+function [ha, hp, T] = getOrbitCharacteristics(kep, Re, mu)
+    ha = (kep(1)*(1+kep(2)) - Re)/1000; % Initial apogee altitude [km]
+    hp = (kep(1)*(1-kep(2)) - Re)/1000; % Initial perigee altitude [km]
+    n0    = sqrt(mu/kep(1)^3);               
+    T = 2*pi/n0;                        % Initial orbital period
+end
