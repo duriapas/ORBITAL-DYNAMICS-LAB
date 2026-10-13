@@ -47,14 +47,14 @@ start_time = datetime(2013,11,10,23,03,03.95,'TimeZone','UTC');
 
 % Global parameters
 mu = 3.986004418e14;        
-Re = 6371137;                 % [km]
+Re = 6371137;           % [km]
 J2 = 1.08262668e-3;
-AU  = 149597870.7;            % astronomical unit [km]
+AU  = 149597870.7;      % astronomical unit [km]
 
 %Satellite properties 
 mass_sat  = 900.0;      % Satellite mass [kg]
 area_drag = 1.1;        % Cross-sectional area S [m^2]
-Cd        = 3.0;       % Drag coefficient [-]
+Cd  = 3.0;              % Drag coefficient [-]
 
 %% Task 1(a)
 clc;
@@ -62,7 +62,7 @@ close all;
 
 % Select end date and sample time 
 stop_time = start_time+days(10); %propagate for 10 day
-sample_time=120; %Sample every 60 seconds
+sample_time=120; 
 
 % Create Satellite scenario
 sc = satelliteScenario(start_time,stop_time,sample_time);
@@ -78,8 +78,8 @@ numericalPropagator(sc,...
 % Satellites 
 % satA = satellite(sc,a_a,e_a,i_a,raan_a,aop_a,ta_a,"Name","SAT_A", ...
 %     "OrbitPropagator","two-body-keplerian");
-satB = satellite(sc,a_b,e_b,i_b,raan_b,aop_b,ta_b,"Name","SAT_B", ...
-    "OrbitPropagator","two-body-keplerian");
+% satB = satellite(sc,a_b,e_b,i_b,raan_b,aop_b,ta_b,"Name","SAT_B", ...
+%     "OrbitPropagator","two-body-keplerian");
 % satC = satellite(sc,a_c,e_c,i_c,raan_c,aop_c,ta_c,"Name","SAT_C", ...
 %     "OrbitPropagator","numerical");
 % satD = satellite(sc,a_d,e_d,i_d,raan_d,aop_d,ta_d,"Name","SAT_D", ...
@@ -95,11 +95,6 @@ satB = satellite(sc,a_b,e_b,i_b,raan_b,aop_b,ta_b,"Name","SAT_B", ...
 % groundTrack(satC,LeadTime=86400*10);
 % groundTrack(satD,LeadTime=86400*1);
 
-% Check if sunsynchronous orbits
-% isSunSynchronous(elems(2,:), names(2), 0.01, start_time, Re, mu, J2);
-% isSunSynchronous(a_b, e_b, i_b, "Orbit B", 0.01);
-% isSunSynchronous(a_c, e_c, i_c, "Orbit C", 0.01);
-% isSunSynchronous(a_d, e_d, i_d, "Orbit D", 0.01);
 
 for i=1:4
     kep = elems(i,:);
@@ -107,9 +102,9 @@ for i=1:4
     % Orbital characteristics
     [ha, hp, T] = getOrbitCharacteristics(kep, Re, mu);
     fprintf("\n===== Orbit %s =====\n", names(i));
-    fprintf('Apogee Altitude : %.1f km\n', ha);
-    fprintf('Perige Altitude : %.1f km\n', hp);
-    fprintf('Apogee Altitude : %.1f hours\n', T/3600);
+    fprintf('Apogee Altitude: %.1f km\n', ha);
+    fprintf('Perige Altitude: %.1f km\n', hp);
+    fprintf('Orbital period: %.1f hours\n', T);
 
     % Sun-synchronous?
     epoch = datetime(2013,11,10,23,03,03.95);
@@ -148,7 +143,7 @@ maxWin = nan(nOrb,1);   % [min]
 timePerDay = nan(nOrb,1);   % [min/day] 
 maxGap = nan(nOrb,1);   % [h] longest time without contact
  
-% Main loop: orbits -> chunks
+% Chunk propagation
 for k = 1:nOrb
     idx = orbitsToRun(k);
     sample_time  = sample_times(idx);
@@ -828,59 +823,67 @@ plot(T_all/86400, e_all, 'b'); grid on
 xlabel('Time since epoch [days]'); ylabel('e [-]')
 title('Selected orbit: eccentricity with drag (100 days)')
 
+%% Extra: Swath width for the different orbits
+clc;
+close all;
+
+half_angleFov = 20;  % [deg]
+
+for i=1:4
+    kep = elems(i,:);
+    [ha, hp, T] = getOrbitCharacteristics(kep, Re, mu);
+    [Wa,~,~] = swathWidth(ha, half_angleFov, Re/1000);
+    [Wp,~,~] = swathWidth(hp, half_angleFov, Re/1000);
+    fprintf("\n===== Orbit %s =====\n", names(i));
+    fprintf('Swath width at apogee: %.1f km\n', Wa);
+    fprintf('Swath width at perigee: %.1f km\n', Wp);
+end
 
 %% Auxiliary functions
 
 
 % Check whether an orbit is sun-synchronous given the initial orbital elements.
 % If it is, also compute the Local Time of the Ascending Node (LTAN) at epoch.
-function [isSSO, raanDot, sunDot, ltan, ltanApp] = isSunSynchronous(kep,...
-                                            name, tol, epoch, Re, mu, J2)
-n = sqrt(mu / kep(1)^3);
-p = kep(1) * (1 - kep(2)^2);
-K = 1.5 * n * J2 * (Re/p)^2;
-raanDot = -K * cosd(kep(3)) * (180/pi) * 86400;   % secular RAAN rate [deg/day]
-sunDot  = 360 / 365.2422;                     % Sun's mean motion [deg/day]
-isSSO = abs(raanDot/sunDot - 1) <= tol;
-ltanDrift = 4 * (raanDot - sunDot);   % LTAN drift [min/day] (1 deg = 4 min)
-yesno = {'no', 'yes'};
-fprintf('%s; dRAAN/dt = %+.5f deg/day vs Sun %.5f deg/day (%+.2f %%)\n', ...
-    name, raanDot, sunDot, 100*(raanDot/sunDot - 1));
-fprintf('%s; LTAN drift = %+.4f min/day (%+.1f min/year) -> sun-synchronous: %s (tol %.2g %%)\n', ...
-    name, ltanDrift, 365.25*ltanDrift, yesno{isSSO + 1}, 100*tol);
+function [isSSO, raanDot, sunDot, ltan] = isSunSynchronous(kep,...
+    name, tol, epoch, Re, mu, J2)
+    n = sqrt(mu / kep(1)^3);
+    p = kep(1) * (1 - kep(2)^2);
+    K = 1.5 * n * J2 * (Re/p)^2;
+    raanDot = -K * cosd(kep(3)) * (180/pi) * 86400;   % secular RAAN rate [deg/day]
+    sunDot  = 360 / 365.2422;                     % Sun mean motion [deg/day]
+    isSSO = abs(raanDot/sunDot - 1) <= tol;
+    ltanDrift = 4 * (raanDot - sunDot);   % LTAN drift [min/day] (1 deg = 4 min)
+    yesno = {'no', 'yes'};
+    fprintf('%s; dRAAN/dt = %+.5f deg/day vs Sun %.5f deg/day\n', ...
+        name, raanDot, sunDot);
+    fprintf('%s; LTAN drift = %+.4f min/day (%+.1f min/year) -> sun-synchronous: %s (tol %.2g %%)\n', ...
+        name, ltanDrift, 365.25*ltanDrift, yesno{isSSO + 1}, 100*tol);
 
-ltan = NaN;
-ltanApp = NaN;
-if isSSO && nargin >= 7
-    % Days since J2000.0 (2000-01-01 12:00 TT; the ~1 min UTC-TT offset is negligible here)
-    if isdatetime(epoch)
-        d = days(epoch - datetime(2000, 1, 1, 12, 0, 0));
-    else
-        d = epoch - 2451545.0;      % epoch given as a Julian Date
+    ltan = NaN;
+    if isSSO
+        % Epoch as a Julian Date (UTC)
+        jdUTC = juliandate(epoch);
+    
+        % Ephemeris 
+        jdTDB = jdUTC + (35 + 32.184)/86400;   % UTC->TT ~ TDB (35 leap s in 2013)
+        rSun  = planetEphemeris(jdTDB, 'Earth', 'Sun');% Earth-Sun vector[km] ICRF
+        alphaSunEph = mod(atan2d(rSun(2), rSun(1)), 360);% true Sun RA ICRF/J2000 [deg]
+    
+        % LTAN: the Sun is at local noon where the node's RA equals the Sun's RA,
+        % and every 15 deg of RA east of the Sun adds 1 h of local time.
+        ltan = mod(12 + (kep(4) - alphaSunEph)/15, 24);% true Sun
+    
+        fprintf('%s | Sun RA at epoch = %.3f deg (planetEphemeris)\n', ...
+            name, alphaSunEph);
+        fprintf('%s | LTAN at epoch = %s solar time\n', ...
+            name,  hhmm(ltan));
     end
-
-    % Low-precision Sun position (Astronomical Almanac, ~0.01 deg accuracy)
-    L   = mod(280.460 + 0.9856474*d, 360);      % Sun mean longitude [deg]
-    g   = mod(357.528 + 0.9856003*d, 360);      % Sun mean anomaly [deg]
-    lam = L + 1.915*sind(g) + 0.020*sind(2*g);  % Sun ecliptic longitude [deg]
-    eps = 23.439 - 4e-7*d;                      % obliquity of the ecliptic [deg]
-    alphaSun = mod(atan2d(cosd(eps)*sind(lam), cosd(lam)), 360);  % true Sun RA [deg]
-
-    % LTAN: the Sun is at local noon (12 h) where the node's RA equals the Sun's RA,
-    % and every 15 deg of RA east of the Sun adds 1 h of local time.
-    ltan    = mod(12 + (kep(4) - L)/15, 24);          % mean Sun  (RA of mean Sun = L)
-    ltanApp = mod(12 + (kep(4) - alphaSun)/15, 24);   % true Sun
-
-    fprintf('%s | Sun RA at epoch = %.3f deg (mean Sun %.3f deg)\n', name, alphaSun, L);
-    fprintf('%s | LTAN at epoch = %s mean solar time (%s apparent solar time)\n', ...
-        name, hhmm(ltan), hhmm(ltanApp));
-end
 end
 
 % Format decimal hours as hh:mm
 function s = hhmm(h)
-m = mod(round(h*60), 1440);
-s = sprintf('%02d:%02d', floor(m/60), mod(m, 60));
+    m = mod(round(h*60), 1440);
+    s = sprintf('%02d:%02d', floor(m/60), mod(m, 60));
 end
 
 % Enter NaN between jumps of more than 180 deg
@@ -908,9 +911,27 @@ function [allS, allE] = appendIntervals(allS, allE, newS, newE, chunkStart, tol)
     allE = [allE; newE];
 end
 
+% Altitude at apogee, at perigee and orbital period (initial parameters)
 function [ha, hp, T] = getOrbitCharacteristics(kep, Re, mu)
     ha = (kep(1)*(1+kep(2)) - Re)/1000; % Initial apogee altitude [km]
     hp = (kep(1)*(1-kep(2)) - Re)/1000; % Initial perigee altitude [km]
-    n0    = sqrt(mu/kep(1)^3);               
-    T = 2*pi/n0;                        % Initial orbital period
+    n0 = sqrt(mu/kep(1)^3);               
+    T = 2*pi/(n0*3600);                 % Initial orbital period [h]
+end
+
+% Swath width of a nadir-pointing conical sensor over a spherical Earth.
+function [W, lambda, elev] = swathWidth(h, eta, Re)
+    r = Re + h;           % orbit radius [m]
+    rho = asind(Re ./ r);% angular radius of the Earth seen from the satellite [deg]
+    
+    % Sensor geometry: sin(eta) = sin(rho)*cos(elev); lambda = 90 - eta - elev
+    elev = acosd(min(sind(eta) ./ sind(rho), 1));
+    lambda = 90 - eta - elev;
+    
+    % If the cone is wider than the Earth disc the swath is limited by the horizon
+    horizon = eta >= rho;
+    lambda(horizon) = 90 - rho(horizon);
+    elev(horizon) = 0;
+    
+    W = 2 * Re * deg2rad(lambda); % ground swath width (arc length) [m]
 end
