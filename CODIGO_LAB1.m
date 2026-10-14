@@ -122,12 +122,12 @@ total_duration = days(365);
 stop_time = start_time + total_duration;
  
 % Sample time per orbit [A B C D] in s 
-sample_times = [30 30 30 30];
+sample_times = [10 10 10 10];
 % Maximum samples per chunk. 
 max_samples = 20000;         
  
 % Select orbit/orbits to run. Recommended one orbit at a time
-orbitsToRun = 1; 
+orbitsToRun = 4; 
  
 % Ground station data
 gs_lat = 40;             
@@ -220,7 +220,12 @@ for k = 1:nOrb
     if numel(allStart) > 1
         maxGap(k) = max(allStart(2:end) - allEnd(1:end-1))/3600;
     end
- 
+    % % Raw access intervals for this orbit (overwritten on the next iteration, so save now)
+    % save(sprintf('task1b_orbit%s.mat', names(idx)), 'allStart', 'allEnd', 'sample_time', 'start_time');
+    % 
+    % % Summary statistics for all orbits done so far (file is overwritten each iteration)
+    % save('task1b_results.mat', 'orbitsToRun', 'names', 'nContacts', 'avgWin', ...
+    %     'minWin', 'maxWin', 'timePerDay', 'maxGap');
 end
  
 % Results
@@ -231,35 +236,39 @@ Results = table(names(orbitsToRun).', nContacts, contactsPerDay, avgWin, ...
      'MinWindow_min','MaxWindow_min','ContactTime_min_per_day','MaxGap_h'});
 disp(Results)
 
-%% Task 1(c) 
+%% Task 1(c)
 clc; close all;
-
 % Settings
-stop_time  = start_time + days(30);      
-
-SelectOrbit = 4;   % 1 = A, 2 = B, 3 = C, 4 = D
-sample_times = [30 15 15 10];         % step in s for orbits A, B, C, D
+stop_time  = start_time + days(100);
+SelectOrbit = 2;   % 1 = A, 2 = B, 3 = C, 4 = D
+sample_times = [10 10 10 10];         % step in s for orbits A, B, C, D
 sample_time  = sample_times(SelectOrbit);
-% Maximum samples per chunk. 
+% Maximum samples per chunk.
 max_samples = 20000;
 % Chunk length
-chunk_length = seconds(max_samples*sample_time);  
-
+chunk_length = seconds(max_samples*sample_time);
 % State at the start of each chunk
-kep = elems(SelectOrbit,:);               
-
-eq_lon = -180:22.5:135;          % [deg] longitudes of the equator points
+kep = elems(SelectOrbit,:);
+eq_lon = -180:45:135;          % [deg] longitudes of the equator points
 nPts   = numel(eq_lon);
-
-% Access intervals of each point (seconds since start_time)
-intS = cell(1, nPts);
-intE = cell(1, nPts);
-
+ 
+% Pointing strategies: 1 = nadir, 2 = tracking (gimbal steered to each point)
+stratNames = ["Nadir", "Tracking"];
+nStrat     = numel(stratNames);
+ 
+% Minimum elevation [deg] of the satellite as seen from the equator points
+% for the tracking camera. 0 = pure line of sight
+minElev_track = 0;
+ 
+% Access intervals of each point and strategy (seconds since start_time)
+intS = cell(nStrat, nPts);
+intE = cell(nStrat, nPts);
+ 
 % Propagation in chunks
 t0 = start_time;
 while t0 < stop_time
     t1 = min(t0 + chunk_length, stop_time);
-
+ 
     % Scenario and propagator for this chunk
     sc = satelliteScenario(t0, t1, sample_time);
     numericalPropagator(sc, 'IncludeAtmosDrag', false, ...
@@ -267,62 +276,79 @@ while t0 < stop_time
         'ODESolver', "ode45", 'ODESet', odeset('RelTol',1e-8,'AbsTol',1e-8));
     sat = satellite(sc, kep(1), kep(2), kep(3), kep(4), kep(5), kep(6), ...
         "OrbitPropagator", "numerical");
-
-    % Nadir-pointing camera
-    g = gimbal(sat);
-    pointAt(g, "nadir");
-    cam = conicalSensor(g, "MaxViewAngle", 40);   
-
+ 
+    % nadir-pointing camera (single gimbal fixed to nadir)
+    gN = gimbal(sat);
+    pointAt(gN, "nadir");
+    camN = conicalSensor(gN, "MaxViewAngle", 40);
+ 
     % Fake ground stations on the equator and camera access to each one
-    ac = cell(1, nPts);
+    ac = cell(nStrat, nPts);
     for p = 1:nPts
-        pt    = groundStation(sc, 0, eq_lon(p));
-        ac{p} = access(cam, pt);
+        % Nadir camera 
+        ptN = groundStation(sc, 0, eq_lon(p));
+        ac{1,p} = access(camN, ptN);
+ 
+        % Tracking camera. A gimbal can only point at one
+        % target, so each equator point gets its own gimbal + camera
+        ptT = groundStation(sc, 0, eq_lon(p), ...
+            "MaskElevationAngle", minElev_track);
+        gT = gimbal(sat);
+        pointAt(gT, ptT);
+        camT = conicalSensor(gT, "MaxViewAngle", 40);
+        ac{2,p} = access(camT, ptT);
     end
-
+ 
     % Store the intervals of this chunk
-    for p = 1:nPts
-        iv = accessIntervals(ac{p});
-        S = iv.StartTime;  S.TimeZone = 'UTC';
-        E = iv.EndTime;    E.TimeZone = 'UTC';
-        [intS{p}, intE{p}] = appendIntervals(intS{p}, intE{p}, ...
-            seconds(S - start_time), seconds(E - start_time), ...
-            seconds(t0 - start_time), sample_time/2);
+    for s = 1:nStrat
+        for p = 1:nPts
+            iv = accessIntervals(ac{s,p});
+            S = iv.StartTime;  S.TimeZone = 'UTC';
+            E = iv.EndTime;    E.TimeZone = 'UTC';
+            [intS{s,p}, intE{s,p}] = appendIntervals(intS{s,p}, intE{s,p}, ...
+                seconds(S - start_time), seconds(E - start_time), ...
+                seconds(t0 - start_time), sample_time/2);
+        end
     end
-
+ 
     % Prepare next chunk propagation
     [r_end, v_end] = states(sat, t1, "CoordinateFrame", "inertial");
     [a, ecc, incl, RAAN, argp, nu] = ijk2keplerian(r_end, v_end);
     kep = [a ecc incl RAAN argp nu];
-
     fprintf("Done until %s\n", string(t1, 'dd-MMM-yyyy HH:mm'));
     t0 = t1;
-    clear sc sat g cam ac pt iv
+    clear sc sat gN camN gT camT ac ptN ptT iv
 end
-
-% Revisit time
-maxRevisit_h = zeros(nPts, 1);
-nAccess      = zeros(nPts, 1);
-for p = 1:nPts
-    nAccess(p) = numel(intS{p});
-    if nAccess(p) >= 2
-        gaps = intS{p}(2:end) - intE{p}(1:end-1);   % [s] end of one access, start of next
-        maxRevisit_h(p) = max(gaps)/3600;
-    else
-        maxRevisit_h(p) = Inf;                       % seen fewer than 2 times
+ 
+% Revisit time for each strategy
+maxRevisit_h = zeros(nPts, nStrat);
+nAccess      = zeros(nPts, nStrat);
+for s = 1:nStrat
+    for p = 1:nPts
+        nAccess(p,s) = numel(intS{s,p});
+        if nAccess(p,s) >= 2
+            gaps = intS{s,p}(2:end) - intE{s,p}(1:end-1);%[s] end of one access, start of next
+            maxRevisit_h(p,s) = max(gaps)/3600;
+        else
+            maxRevisit_h(p,s) = Inf; % seen fewer than 2 times
+        end
     end
 end
-
-disp(table(eq_lon.', nAccess, maxRevisit_h, ...
-    'VariableNames', {'Lon_deg','nAccess','MaxRevisit_h'}))
-fprintf("Maximum revisit at the equator = %.2f h (%.2f days)\n", ...
-    max(maxRevisit_h), max(maxRevisit_h)/24);
+ 
+disp(table(eq_lon.', nAccess(:,1), maxRevisit_h(:,1), nAccess(:,2), maxRevisit_h(:,2), ...
+    'VariableNames', {'Lon_deg', 'nAccess_Nadir', 'MaxRevisit_Nadir_h', ...
+                      'nAccess_Track', 'MaxRevisit_Track_h'}))
+ 
+for s = 1:nStrat
+    fprintf("%s: maximum revisit at the equator = %.2f h (%.2f days)\n", ...
+        stratNames(s), max(maxRevisit_h(:,s)), max(maxRevisit_h(:,s))/24);
+end
 
 %% Task 1(d)
 clc;close all;
 
 %Select end date and sample time 
-stop_time = start_time+days(10); %propagate for 10 day
+stop_time = start_time+days(1); %propagate for 10 day
 sample_time=60; %Sample every 60 seconds
 %Create Satellite scenario
 sc = satelliteScenario(start_time,stop_time,sample_time);
@@ -337,7 +363,7 @@ numericalPropagator(sc,...
     'ODESet', odeset('RelTol', 1e-8, 'AbsTol', 1e-8)); 
 
 % Orbit selection=0 -> Orbit A. Any thing else Orbit C
-OrbitSelection = 0; 
+OrbitSelection = 1; 
 if OrbitSelection == 0
     sat = satellite(sc,a_a,e_a,i_a,raan_a,aop_a,ta_a,"Name","SAT_A", ...
         "OrbitPropagator","two-body-keplerian");
@@ -443,7 +469,7 @@ hold off
 clc;close all;
 
 %Select end date and sample time 
-stop_time = start_time+days(10); 
+stop_time = start_time+days(35); 
 sample_time=300; %Sample every 60 seconds
 %Create Satellite scenario
 sc = satelliteScenario(start_time,stop_time,sample_time);
@@ -452,7 +478,7 @@ sc = satelliteScenario(start_time,stop_time,sample_time);
 
 numericalPropagator(sc,...
     'IncludeAtmosDrag', true, ...
-    'GravitationalPotentialModel', "point-mass", ... %.oblate-ellipsoid
+    'GravitationalPotentialModel', "point-mass", ... % no j2
     'ODESolver', "ode45", ... 
     'ODESet', odeset('RelTol', 1e-7, 'AbsTol', 1e-7)); 
 satD = satellite(sc,a_d,e_d,i_d,raan_d,aop_d,ta_d,"Name","SAT_D", ...
@@ -879,6 +905,7 @@ function [isSSO, raanDot, sunDot, ltan] = isSunSynchronous(kep,...
             name,  hhmm(ltan));
     end
 end
+
 
 % Format decimal hours as hh:mm
 function s = hhmm(h)
